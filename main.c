@@ -37,6 +37,7 @@
 /-------------------------------------------------------------------------*/
 
 
+
 #include <avr/io.h>
 #include <avr/pgmspace.h>
 #include <string.h>
@@ -50,19 +51,71 @@ FATFS Fatfs;				/* Petit-FatFs work area */
 BYTE Buff[SPM_PAGESIZE];	/* Page data buffer */
 
 
+static uint8_t
+pagecmp(uint16_t addr, uint8_t *data)
+{
+	uint16_t i;
+
+	for (i = 0; i < SPM_PAGESIZE; i++) {
+		if (pgm_read_byte(addr++) != *data++)
+			return 1;
+	}
+
+	return 0;
+}
+
+
 int main (void)
 {
+
 	DWORD fa;	/* Flash address */
 	WORD br;	/* Bytes read */
-
+	uint8_t i = 0;
+	uint8_t ch = 0;
 
 	pf_mount(&Fatfs);	/* Initialize file system */
-	if (pf_open("app.bin") == FR_OK) {	/* Open application file */
+	
+
+	/* read board name from eeprom to Buff */
+	while(i<13) {  //8+'.'+3
+	#if defined(__AVR_ATmega168__)  || defined(__AVR_ATmega328P__)
+		while(EECR & (1<<EEPE));
+		EEAR = (uint16_t)(void *)E2END -i;
+		EECR |= (1<<EERE);
+		ch =EEDR;
+	#else
+		ch = eeprom_read_byte((void *)E2END - i);
+	#endif
+		if( ch == 0xFF) break;
+		Buff[i] = ch;
+		i++;
+	}
+	Buff[i] = '\0';
+
+	ch=0;       /* Re-use the variable to save space, now we use it to check if EEPROM or hard-coded file name exists */
+	if (i) {	/* File name found in EEPROM */
+		if (pf_open(Buff) == FR_OK) { /* File opens normally */		
+		ch=1;
+		} 
+	} 
+	else { /* No EEPROM file name found, or the EEPROM file name could not be located on the SD card, so revert tp the hard-coded name */
+	if (pf_open("app.bin") == FR_OK) ch=1;
+	}
+	
+	
+	if (ch) {	/* Open application file */
 		for (fa = 0; fa < BOOT_ADR; fa += SPM_PAGESIZE) {	/* Update all application pages */
-			flash_erase(fa);					/* Erase a page */
-			memset(Buff, 0xFF, SPM_PAGESIZE);	/* Clear buffer */
-			pf_read(Buff, SPM_PAGESIZE, &br);	/* Load a page data */
-			if (br) flash_write(fa, Buff);		/* Write it if the data is available */
+			memset(Buff, 0xFF, SPM_PAGESIZE);		/* Clear buffer */
+			pf_read(Buff, SPM_PAGESIZE, &br);		/* Load a page data */
+								
+			if (br) {					/* Bytes Read > 0? */	
+				for (i = br; i < SPM_PAGESIZE; i++)     /* Pad the remaining last page with 0xFF so that comparison goes OK */
+					Buff[i] = 0xFF;
+				if (pagecmp(fa, Buff)) {		/* Only flash if page is changed */
+					flash_erase(fa);		/* Erase a page */
+					flash_write(fa, Buff);		/* Write it if the data is available */				
+				}
+			}
 		}
 	}
 
