@@ -70,7 +70,6 @@ int main (void)
 	pf_mount(&Fatfs);	/* Initialize file system */
 	if (pf_open("app.bin") == FR_OK) {	/* Open application file */
 		for (fa = 0; fa < BOOT_ADR; fa += SPM_PAGESIZE) {	/* Update all application pages */
-			flash_erase(fa);					/* Erase a page */
 			memset(Buff, 0xFF, SPM_PAGESIZE);	/* Clear buffer */
 			pf_read(Buff, SPM_PAGESIZE, &br);	/* Load a page data */
 								
