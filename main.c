@@ -49,6 +49,17 @@ void flash_write (DWORD, const BYTE*);	/* Program a flash page (asmfunc.S) */
 FATFS Fatfs;				/* Petit-FatFs work area */
 BYTE Buff[SPM_PAGESIZE];	/* Page data buffer */
 
+static uint8_t
+pagecmp(uint16_t addr, uint8_t *data)
+{
+	uint16_t i;
+
+	for (i = 0; i < SPM_PAGESIZE; i++) {
+		if (pgm_read_byte(addr++) != *data++)
+			return 1;
+	}
+	return 0;
+}
 
 int main (void)
 {
@@ -62,7 +73,16 @@ int main (void)
 			flash_erase(fa);					/* Erase a page */
 			memset(Buff, 0xFF, SPM_PAGESIZE);	/* Clear buffer */
 			pf_read(Buff, SPM_PAGESIZE, &br);	/* Load a page data */
-			if (br) flash_write(fa, Buff);		/* Write it if the data is available */
+								
+			if (br) {					/* Bytes Read > 0? */
+				uint16_t j;
+				for (j = br; j < SPM_PAGESIZE; j++)     /* Pad the remaining last page with 0xFF so that comparison goes OK */
+					Buff[j] = 0xFF;
+				if (pagecmp(fa, Buff)) {		/* Only flash if page is changed */
+					flash_erase(fa);		/* Erase a page */
+					flash_write(fa, Buff);		/* Write it if the data is available */
+				}
+			}
 		}
 	}
 
